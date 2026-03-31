@@ -200,6 +200,7 @@ elif page == "🔍 URL Scanner":
                 st.caption("These are the 21 signals the model used to make its decision:")
                 feature_display = features_df.T.reset_index()
                 feature_display.columns = ["Feature", "Value"]
+                feature_display = feature_display.astype(str)
                 st.dataframe(feature_display, use_container_width=True, height=300)
 
     st.markdown("---")
