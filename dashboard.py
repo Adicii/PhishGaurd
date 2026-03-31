@@ -34,6 +34,10 @@ def fast_entropy(s):
     return scipy_entropy(probs)
 
 def extract_single_url(url):
+    parsed = urlparse(url)
+    domain = parsed.netloc
+    path = parsed.path
+
     features = {
         "url_length": len(url),
         "has_https": int(url.startswith("https")),
@@ -47,15 +51,15 @@ def extract_single_url(url):
         "brand_keyword": int(bool(re.search(
             r"paypal|google|facebook|amazon|bank|apple|microsoft|netflix",
             url.lower()))),
-        "suspicious_tld": int(url.split(".")[-1].split("/")[0] in
+        "suspicious_tld": int(domain.split(".")[-1] in
             ["xyz","top","gq","tk","ml","ga","cf","pw"]),
         "url_entropy": fast_entropy(url),
-        "domain_entropy": fast_entropy(url.split("/")[2]) if "://" in url else 0,
+        "domain_entropy": fast_entropy(domain) if domain else 0,
         "hyphen_count": url.count("-"),
-        "path_depth": url.count("/"),
+        "path_depth": path.count("/"),
         "token_count": len(re.findall(r"[.\-_/]", url)),
         "vowel_ratio": sum(c in "aeiouAEIOU" for c in url) / len(url),
-        "domain_length": len(url.split("/")[2]) if "://" in url else 0,
+        "domain_length": len(domain),
         "phish_keyword": int(bool(re.search(
             r"login|secure|verify|account|update|signin|confirm|banking|password",
             url.lower()))),
