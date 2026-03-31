@@ -199,7 +199,7 @@ elif page == "🔍 URL Scanner":
                 st.markdown("### Extracted Features")
                 st.caption("These are the 21 signals the model used to make its decision:")
                 safe_dict = {str(k): str(v) for k, v in features_df.iloc[0].items()}
-                feature_display = pd.DataFrame(list(safe_dict.items()), columns["Feature","Value"])
+                feature_display = pd.DataFrame(list(safe_dict.items()), columns=["Feature", "Value"])
                 st.dataframe(feature_display, use_container_width=True, height=300)
 
     st.markdown("---")
