@@ -18,6 +18,25 @@ st.set_page_config(
     layout="wide"
 )
 
+# ─────────────────────────────────────────────
+# UNIVERSAL FIX: forces all string columns to
+# plain Python object dtype so Streamlit's
+# Arrow serializer never sees LargeUtf8 (type 20)
+# ─────────────────────────────────────────────
+def fix_df(df):
+    for col in df.columns:
+        if df[col].dtype.name in ("string", "StringDtype") or str(df[col].dtype).startswith("string"):
+            df[col] = df[col].astype(object)
+        try:
+            if hasattr(df[col].dtype, "pyarrow_dtype"):
+                df[col] = df[col].astype(object)
+        except Exception:
+            pass
+    # Final safety: cast any remaining non-numeric columns
+    for col in df.select_dtypes(exclude=["number", "bool", "datetime"]).columns:
+        df[col] = df[col].astype(str).astype(object)
+    return df
+
 @st.cache_resource
 def load_model():
     model = joblib.load("best_model.pkl")
@@ -31,7 +50,7 @@ def fast_entropy(s):
         return 0
     counts = Counter(s)
     probs = np.array(list(counts.values())) / len(s)
-    return scipy_entropy(probs)
+    return float(scipy_entropy(probs))
 
 def extract_single_url(url):
     parsed = urlparse(url)
@@ -46,7 +65,7 @@ def extract_single_url(url):
         "has_ip": int(bool(re.search(r"\d+\.\d+\.\d+\.\d+", url))),
         "special_char_count": len(re.findall(r"[^\w]", url)),
         "digit_count": sum(c.isdigit() for c in url),
-        "digit_ratio": sum(c.isdigit() for c in url) / len(url),
+        "digit_ratio": sum(c.isdigit() for c in url) / max(len(url), 1),
         "param_count": url.count("?") + url.count("&"),
         "brand_keyword": int(bool(re.search(
             r"paypal|google|facebook|amazon|bank|apple|microsoft|netflix",
@@ -58,7 +77,7 @@ def extract_single_url(url):
         "hyphen_count": url.count("-"),
         "path_depth": path.count("/"),
         "token_count": len(re.findall(r"[.\-_/]", url)),
-        "vowel_ratio": sum(c in "aeiouAEIOU" for c in url) / len(url),
+        "vowel_ratio": sum(c in "aeiouAEIOU" for c in url) / max(len(url), 1),
         "domain_length": len(domain),
         "phish_keyword": int(bool(re.search(
             r"login|secure|verify|account|update|signin|confirm|banking|password",
@@ -141,12 +160,11 @@ elif page == "🔍 URL Scanner":
             with st.spinner("Extracting features and analyzing..."):
                 features_df = extract_single_url(url_input)
                 prob = model.predict_proba(features_df)[0][1]
-                prediction = 1 if prob >= 0.75 else 0  
+                prediction = 1 if prob >= 0.75 else 0
                 risk_pct = round(prob * 100, 2)
 
             st.markdown("---")
 
-            # Risk verdict
             col1, col2 = st.columns([1.2, 1])
             with col1:
                 if prob > 0.75:
@@ -170,7 +188,7 @@ elif page == "🔍 URL Scanner":
                 if feature_row['phish_keyword']:
                     flags.append(("🟠", "Phishing keyword detected", "Words like 'login', 'verify', 'secure', or 'confirm' are frequently used to create urgency in phishing pages."))
                 if feature_row['at_symbol']:
-                    flags.append(("🔴", "@ symbol in URL", "The @ symbol in a URL causes browsers to ignore everything before it — a known URL obfuscation trick."))
+                    flags.append(("🔴", "@ symbol in URL", "The @ symbol causes browsers to ignore everything before it — a known URL obfuscation trick."))
                 if feature_row['digit_ratio'] > 0.3:
                     flags.append(("🟡", "High digit ratio", "Unusually high proportion of digits suggests algorithmically generated domain names."))
                 if feature_row['url_length'] > 75:
@@ -180,17 +198,19 @@ elif page == "🔍 URL Scanner":
                 if not feature_row['has_https']:
                     flags.append(("🟡", "No HTTPS", "The URL does not use HTTPS. While not conclusive, phishing pages sometimes skip SSL."))
                 if feature_row['subdomain_count'] > 3:
-                    flags.append(("🟠", "Deep subdomain nesting", "Multiple subdomain levels are used to make fake domains appear legitimate e.g. login.bank.com.attacker.xyz."))
+                    flags.append(("🟠", "Deep subdomain nesting", "Multiple subdomain levels are used to make fake domains appear legitimate."))
 
                 if flags:
                     for icon, title, explanation in flags:
                         with st.expander(f"{icon} {title}"):
                             st.markdown(explanation)
                 else:
-                    st.success("✅ No suspicious signals detected in this URL.")
+                    if prob > 0.75:
+                        st.warning("⚠️ The model detected phishing based on the **combined pattern** of all 21 features. No single signal crossed its individual threshold, but the overall URL structure is statistically anomalous.")
+                    else:
+                        st.success("✅ No suspicious signals detected in this URL.")
 
             with col2:
-                # Risk gauge chart
                 fig, ax = plt.subplots(figsize=(4, 4))
                 color = '#e74c3c' if prob > 0.75 else '#f39c12' if prob > 0.4 else '#2ecc71'
                 ax.pie([prob, 1-prob], colors=[color, '#ecf0f1'],
@@ -199,35 +219,60 @@ elif page == "🔍 URL Scanner":
                        fontsize=22, fontweight='bold', color=color)
                 ax.set_title("Phishing Risk Score", fontweight='bold')
                 st.pyplot(fig)
-          # Feature values table
+
+            # Feature values table — Arrow-safe
             st.markdown("### Extracted Features")
             st.caption("These are the 21 signals the model used to make its decision:")
-            safe_dict = {str(k): str(v) for k, v in features_df.iloc[0].items()}
+            safe_dict = {str(k): str(round(float(v), 4) if isinstance(v, float) else v)
+                         for k, v in features_df.iloc[0].items()}
             feature_display = pd.DataFrame(
-                list(safe_dict.items()), 
+                list(safe_dict.items()),
                 columns=["Feature", "Value"],
                 dtype=object
             )
-            # Force standard Python string dtype — prevents Arrow LargeUtf8 serialization error
-            feature_display["Feature"] = feature_display["Feature"].astype(str)
-            feature_display["Value"] = feature_display["Value"].astype(str)
-            feature_display = feature_display.astype({"Feature": "object", "Value": "object"})
+            feature_display["Feature"] = feature_display["Feature"].astype(str).astype(object)
+            feature_display["Value"] = feature_display["Value"].astype(str).astype(object)
             st.table(feature_display.set_index("Feature"))
 
-        st.markdown("---")
-        st.markdown("### 🧪 Quick Test URLs")
-        st.markdown("Copy any of these into the scanner above:")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**Likely Phishing:**")
-            st.code("http://paypal-login-security.xyz/update/account")
-            st.code("http://192.168.1.1/bank/login.php?id=293847")
-            st.code("http://secure-verify-amazon.tk/confirm")
-        with col2:
-            st.markdown("**Likely Safe:**")
-            st.code("https://www.google.com")
-            st.code("https://www.github.com")
-            st.code("https://www.wikipedia.org")
+    st.markdown("---")
+    st.markdown("### 🧪 Quick Test URLs")
+    st.markdown("Copy any of these into the scanner above:")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**🚨 Likely Phishing (10 examples):**")
+        phishing_urls = [
+            "http://paypal-login-security.xyz/update/account",
+            "http://192.168.1.1/bank/login.php?id=293847",
+            "http://secure-verify-amazon.tk/confirm",
+            "http://apple-id-verify.top/account/signin",
+            "http://facebook-login.security-check.ml/verify",
+            "http://bankofamerica-secure.ga/update",
+            "http://signin-google-verify.cf/account",
+            "http://netflix-payment-update.gq/billing",
+            "http://microsoft-support-alert.pw/security",
+            "http://paypal.com.account-verify.xyz/login",
+        ]
+        for u in phishing_urls:
+            st.code(u)
+
+    with col2:
+        st.markdown("**✅ Likely Safe (10 examples):**")
+        safe_urls = [
+            "https://www.google.com",
+            "https://www.wikipedia.org",
+            "https://www.github.com",
+            "https://www.microsoft.com",
+            "https://www.stackoverflow.com",
+            "https://www.youtube.com",
+            "https://www.linkedin.com",
+            "https://www.bbc.com",
+            "https://www.harvard.edu",
+            "https://www.amazon.com",
+        ]
+        for u in safe_urls:
+            st.code(u)
+
 # ════════════════════════════════════════════════════════════
 # PAGE 3 — MODEL PERFORMANCE
 # ════════════════════════════════════════════════════════════
@@ -296,7 +341,8 @@ elif page == "📊 Model Performance":
                 "Best metric for probabilistic classifiers"
             ]
         }
-        st.dataframe(pd.DataFrame(metrics_explained), use_container_width=True)
+        me_df = fix_df(pd.DataFrame(metrics_explained))
+        st.dataframe(me_df, use_container_width=True)
 
     st.markdown("---")
     st.markdown("### 📊 Visual Comparison")
@@ -314,8 +360,7 @@ elif page == "📊 Model Performance":
     axes[0].legend(fontsize=8)
     axes[0].set_ylabel('Score')
 
-    axes[1].barh(list(results_df.index), results_df['ROC-AUC'],
-                color=colors, alpha=0.85)
+    axes[1].barh(list(results_df.index), results_df['ROC-AUC'], color=colors, alpha=0.85)
     axes[1].set_xlim(0.998, 1.0005)
     axes[1].set_title('ROC-AUC by Model', fontweight='bold')
     axes[1].set_xlabel('ROC-AUC Score')
@@ -364,10 +409,10 @@ elif page == "📈 Feature Analysis":
     col1, col2 = st.columns([1, 1.2])
     with col1:
         fig, ax = plt.subplots(figsize=(7, 9))
-        colors = ['#e74c3c' if x > 0.05 else '#3498db' if x > 0.01 else '#95a5a6'
+        colors_imp = ['#e74c3c' if x > 0.05 else '#3498db' if x > 0.01 else '#95a5a6'
                   for x in imp_df['Importance']]
-        bars = ax.barh(imp_df['Feature'], imp_df['Importance'], color=colors, alpha=0.85)
-        ax.set_title('Feature Importance (Random Forest)\nRed=High | Blue=Medium | Grey=Low',
+        bars = ax.barh(imp_df['Feature'], imp_df['Importance'], color=colors_imp, alpha=0.85)
+        ax.set_title('Feature Importance (Gradient Boosting)\nRed=High | Blue=Medium | Grey=Low',
                     fontweight='bold', fontsize=10)
         ax.set_xlabel('Importance Score')
         for bar, val in zip(bars, imp_df['Importance']):
@@ -378,7 +423,7 @@ elif page == "📈 Feature Analysis":
 
     with col2:
         st.markdown("### 📖 Feature Dictionary")
-        feature_dict = pd.DataFrame([
+        feature_dict_data = [
             ("url_length", "Structural", "Total character count of the URL. Phishing URLs tend to be longer to obscure the real domain."),
             ("has_https", "Security", "Whether URL uses HTTPS. Phishing sites increasingly use HTTPS to appear trustworthy."),
             ("dot_count", "Structural", "Number of dots in URL. More dots indicate deeper subdomain nesting."),
@@ -400,7 +445,8 @@ elif page == "📈 Feature Analysis":
             ("phish_keyword", "Semantic", "Presence of words like login, verify, secure, confirm, banking, password."),
             ("at_symbol", "Network", "Presence of @ in URL — a known obfuscation technique to hide real destination."),
             ("double_slash", "Structural", "Count of double slashes — can indicate URL redirection tricks."),
-        ], columns=["Feature", "Category", "Description"])
+        ]
+        feature_dict = fix_df(pd.DataFrame(feature_dict_data, columns=["Feature", "Category", "Description"]))
 
         category_filter = st.selectbox("Filter by Category:",
             ["All", "Structural", "Statistical", "Network", "Semantic", "Security"])
@@ -606,9 +652,7 @@ elif page == "🎓 Course Concepts Applied":
 
     **Applied In This Project:**
     - Phishing is classified as a **passive + active attack** under the OSI security threat model
-    - The detection system operates at **OSI Layer 7 (Application Layer)** — analyzing HTTP/HTTPS traffic metadata
-    - The project models the **threat → detection → response** pipeline described in network security architecture
-    - URL structural analysis simulates what a **network security gateway** observes at the application layer
+    - The detection system operates at **OSI Layer 7 (Application Layer)**
     - Features like `has_ip`, `suspicious_tld`, and `special_char_count` directly model **network-level attack indicators**
     """)
 
@@ -619,20 +663,19 @@ elif page == "🎓 Course Concepts Applied":
         **Syllabus Topics:** SHA, Hash Function Applications, Security Requirements
 
         **Applied In This Project:**
-        - SHA-256 hashing is used to create a **unique fingerprint** of each URL
-        - This fingerprint can be used to detect **repeat phishing URLs** across sessions
-        - The concept of **collision resistance** in hash functions ensures each URL maps to a unique identifier
-        - URL entropy calculation is mathematically related to **information-theoretic concepts** underlying hash functions
+        - SHA-256 hashing creates a **unique fingerprint** of each URL
+        - Used to detect **repeat phishing URLs** across sessions
+        - URL entropy calculation relates to **information-theoretic concepts** in hash functions
         """)
     with col2:
         st.markdown("#### 🔬 Live SHA-256 URL Fingerprinting Demo")
         import hashlib
-        demo_url = st.text_input("Enter a URL to generate its SHA-256 fingerprint:", 
+        demo_url = st.text_input("Enter a URL to generate its SHA-256 fingerprint:",
                                   value="http://paypal-login-security.xyz")
         if demo_url:
             fingerprint = hashlib.sha256(demo_url.encode()).hexdigest()
             st.code(f"URL: {demo_url}\nSHA-256: {fingerprint}", language="text")
-            st.caption("This fingerprint uniquely identifies this URL. Even a single character change produces a completely different hash.")
+            st.caption("Even a single character change produces a completely different hash.")
 
     st.markdown("### 📘 Module 5 — User Authentication")
     st.success("""
@@ -640,48 +683,37 @@ elif page == "🎓 Course Concepts Applied":
 
     **Applied In This Project:**
     - The **Session Behavioral Analyzer** directly models authentication threat patterns
-    - Phishing attacks target the **authentication process** — they steal credentials by mimicking login pages
     - Session signals like *time to credential submission* and *navigation entropy* model **authentication interaction anomalies**
-    - The system detects when a user is being **socially engineered** during an authentication session
-    - This aligns with the study of **remote user authentication vulnerabilities** covered in Module 5
     """)
 
     st.markdown("### 📘 Module 7 — Web Security")
     st.error("""
     **Syllabus Topics:** Web Security Threats, HTTPS, TLS, Web Traffic Security Approaches
 
-    **Applied In This Project — This is the core module:**
-    - **HTTPS Detection (`has_https` feature):** The system checks whether URLs use TLS/HTTPS. 
-      While HTTPS doesn't guarantee safety, its absence is a weak indicator and its presence 
-      with other suspicious signals confirms phishing.
-    - **Web Traffic Security:** All 21 features simulate what a **web traffic security gateway** 
-      would observe — without decrypting content.
-    - **TLS Anomaly Detection:** Suspicious TLDs combined with HTTPS usage is a known 
-      phishing pattern — attackers obtain free TLS certificates for malicious domains.
-    - **Web Security Threats:** Phishing is explicitly categorized as a web security threat 
-      in Module 7. This project builds a detection system for exactly this threat class.
-    - **Transport Layer Security:** The `has_https` and `suspicious_tld` features together 
-      model TLS misuse patterns in phishing campaigns.
+    **Applied In This Project:**
+    - **HTTPS Detection (`has_https`):** Checks whether URLs use TLS/HTTPS
+    - **Suspicious TLD + HTTPS combo** detects TLS misuse on cheap phishing domains
+    - All 21 features simulate what a **web traffic security gateway** would observe
     """)
 
     st.markdown("---")
     st.markdown("### 🗺️ Full Syllabus Mapping Table")
-    mapping = pd.DataFrame([
+    mapping_data = [
         ("Module 1", "Network Security Concepts", "URL feature extraction at application layer, OSI threat modeling", "✅ Direct"),
         ("Module 2", "Public Key Cryptography", "HTTPS uses TLS which relies on PKI — detected via has_https feature", "⚡ Indirect"),
         ("Module 3", "Cryptographic Hash Functions", "SHA-256 URL fingerprinting, entropy-based randomness analysis", "✅ Direct"),
         ("Module 4", "MAC & Digital Signatures", "TLS certificates on phishing sites — detected via TLD + HTTPS combo", "⚡ Indirect"),
         ("Module 5", "User Authentication", "Session behavioral analysis of authentication anomalies", "✅ Direct"),
-        ("Module 6", "Wireless Network Security", "Phishing attacks also occur over wireless networks — same detection applies", "⚡ Indirect"),
+        ("Module 6", "Wireless Network Security", "Phishing attacks occur over wireless too — same detection applies", "⚡ Indirect"),
         ("Module 7", "Web Security", "HTTPS detection, web threat modeling, TLS anomaly detection", "✅ Direct"),
         ("Module 8", "Contemporary Issues", "Zero-day phishing, AI-based detection — core project motivation", "✅ Direct"),
-    ], columns=["Module", "Topic", "Application in Project", "Relevance"])
-
+    ]
+    mapping = fix_df(pd.DataFrame(mapping_data, columns=["Module", "Topic", "Application in Project", "Relevance"]))
     st.dataframe(mapping, use_container_width=True)
 
     st.markdown("---")
     st.markdown("### 💡 Key Security Concepts Demonstrated")
     col1, col2, col3 = st.columns(3)
-    col1.info("**Defense in Depth**\nThe system uses multiple independent signals — no single feature decides. This mirrors layered security architecture from Module 1.")
-    col2.info("**Zero-Day Detection**\nBlacklist-free detection using structural analysis — addresses zero-day web threats from Module 7.")
-    col3.info("**Anomaly Detection**\nBoth URL-level and session-level anomaly detection — core principle from network security threat modeling.")
+    col1.info("**Defense in Depth**\nMultiple independent signals — no single feature decides. Mirrors layered security architecture.")
+    col2.info("**Zero-Day Detection**\nBlacklist-free detection using structural analysis — addresses zero-day web threats.")
+    col3.info("**Anomaly Detection**\nBoth URL-level and session-level anomaly detection — core network security principle.")
