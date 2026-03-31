@@ -194,14 +194,22 @@ elif page == "🔍 URL Scanner":
                        fontsize=22, fontweight='bold', color=color)
                 ax.set_title("Phishing Risk Score", fontweight='bold')
                 st.pyplot(fig)
+            # Feature values table
+            st.markdown("### Extracted Features")
+            st.caption("These are the 21 signals the model used to make its decision:")
 
-                # Feature values table
-                st.markdown("### Extracted Features")
-                st.caption("These are the 21 signals the model used to make its decision:")
-                safe_dict = {str(k): str(v) for k, v in features_df.iloc[0].items()}
-                feature_display = pd.DataFrame(list(safe_dict.items()), columns=["Feature", "Value"])
-                st.table(feature_display.set_index("Feature"))
+            safe_dict = {str(k): str(v) for k, v in features_df.iloc[0].items()}
+            feature_display = pd.DataFrame(
+                list(safe_dict.items()), 
+                columns=["Feature", "Value"]
+            )
 
+# Force standard Python string dtype — prevents Arrow LargeUtf8 serialization error
+feature_display["Feature"] = feature_display["Feature"].astype(str)
+feature_display["Value"] = feature_display["Value"].astype(str)
+feature_display = feature_display.astype({"Feature": "object", "Value": "object"})
+
+st.table(feature_display.set_index("Feature"))
     st.markdown("---")
     st.markdown("### 🧪 Quick Test URLs")
     st.markdown("Copy any of these into the scanner above:")
