@@ -120,9 +120,6 @@ if page == "🏠 Home":
     - ✅ Compares **4 machine learning models**
     """)
 
-# ════════════════════════════════════════════════════════════
-# PAGE 2 — URL SCANNER
-# ════════════════════════════════════════════════════════════
 elif page == "🔍 URL Scanner":
     st.title("🔍 URL Risk Scanner")
     st.markdown("Enter any URL below to receive a detailed phishing risk assessment. The system extracts 21 structural and statistical features from the URL and runs them through a trained Gradient Boosting classifier.")
@@ -141,7 +138,6 @@ elif page == "🔍 URL Scanner":
 
             st.markdown("---")
 
-            # Risk verdict
             col1, col2 = st.columns([1.2, 1])
             with col1:
                 if prob > 0.75:
@@ -175,54 +171,59 @@ elif page == "🔍 URL Scanner":
                 if not feature_row['has_https']:
                     flags.append(("🟡", "No HTTPS", "The URL does not use HTTPS. While not conclusive, phishing pages sometimes skip SSL."))
                 if feature_row['subdomain_count'] > 3:
-                    flags.append(("🟠", "Deep subdomain nesting", "Multiple subdomain levels are used to make fake domains appear legitimate e.g. login.bank.com.attacker.xyz."))
+                    flags.append(("🟠", "Deep subdomain nesting", "Multiple subdomain levels are used to make fake domains appear legitimate."))
 
                 if flags:
                     for icon, title, explanation in flags:
                         with st.expander(f"{icon} {title}"):
                             st.markdown(explanation)
                 else:
-                    st.success("✅ No suspicious signals detected in this URL.")
+                    # Model flagged it but no single heuristic fired — explain this honestly
+                    if prob > 0.75:
+                        st.warning("⚠️ The model detected phishing based on the **combined pattern** of all 21 features. No single signal crossed its individual threshold, but the overall URL structure is statistically anomalous.")
+                    elif prob > 0.4:
+                        st.info("ℹ️ Some subtle signals contributed to this score. See the Extracted Features table below for the raw values the model used.")
+                    else:
+                        st.success("✅ No suspicious signals detected in this URL.")
 
             with col2:
-                # Risk gauge chart
                 fig, ax = plt.subplots(figsize=(4, 4))
                 color = '#e74c3c' if prob > 0.75 else '#f39c12' if prob > 0.4 else '#2ecc71'
                 ax.pie([prob, 1-prob], colors=[color, '#ecf0f1'],
                        startangle=90, wedgeprops=dict(width=0.5))
                 ax.text(0, 0, f"{risk_pct}%", ha='center', va='center',
-                       fontsize=22, fontweight='bold', color=color)
+                        fontsize=22, fontweight='bold', color=color)
                 ax.set_title("Phishing Risk Score", fontweight='bold')
                 st.pyplot(fig)
-          # Feature values table
+
+            # Feature values table — OUTSIDE col2, back at scan-result indent level
             st.markdown("### Extracted Features")
             st.caption("These are the 21 signals the model used to make its decision:")
             safe_dict = {str(k): str(v) for k, v in features_df.iloc[0].items()}
             feature_display = pd.DataFrame(
-                list(safe_dict.items()), 
+                list(safe_dict.items()),
                 columns=["Feature", "Value"],
                 dtype=object
             )
-            # Force standard Python string dtype — prevents Arrow LargeUtf8 serialization error
             feature_display["Feature"] = feature_display["Feature"].astype(str)
             feature_display["Value"] = feature_display["Value"].astype(str)
             feature_display = feature_display.astype({"Feature": "object", "Value": "object"})
             st.table(feature_display.set_index("Feature"))
 
-        st.markdown("---")
-        st.markdown("### 🧪 Quick Test URLs")
-        st.markdown("Copy any of these into the scanner above:")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**Likely Phishing:**")
-            st.code("http://paypal-login-security.xyz/update/account")
-            st.code("http://192.168.1.1/bank/login.php?id=293847")
-            st.code("http://secure-verify-amazon.tk/confirm")
-        with col2:
-            st.markdown("**Likely Safe:**")
-            st.code("https://www.google.com")
-            st.code("https://www.github.com")
-            st.code("https://www.wikipedia.org")
+    st.markdown("---")
+    st.markdown("### 🧪 Quick Test URLs")
+    st.markdown("Copy any of these into the scanner above:")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Likely Phishing:**")
+        st.code("http://paypal-login-security.xyz/update/account")
+        st.code("http://192.168.1.1/bank/login.php?id=293847")
+        st.code("http://secure-verify-amazon.tk/confirm")
+    with col2:
+        st.markdown("**Likely Safe:**")
+        st.code("https://www.google.com")
+        st.code("https://www.github.com")
+        st.code("https://www.wikipedia.org")
 # ════════════════════════════════════════════════════════════
 # PAGE 3 — MODEL PERFORMANCE
 # ════════════════════════════════════════════════════════════
