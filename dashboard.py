@@ -194,37 +194,35 @@ elif page == "🔍 URL Scanner":
                        fontsize=22, fontweight='bold', color=color)
                 ax.set_title("Phishing Risk Score", fontweight='bold')
                 st.pyplot(fig)
-            # Feature values table
+          # Feature values table
             st.markdown("### Extracted Features")
             st.caption("These are the 21 signals the model used to make its decision:")
-
             safe_dict = {str(k): str(v) for k, v in features_df.iloc[0].items()}
             feature_display = pd.DataFrame(
                 list(safe_dict.items()), 
-                columns=["Feature", "Value"]
+                columns=["Feature", "Value"],
+                dtype=object
             )
+            # Force standard Python string dtype — prevents Arrow LargeUtf8 serialization error
+            feature_display["Feature"] = feature_display["Feature"].astype(str)
+            feature_display["Value"] = feature_display["Value"].astype(str)
+            feature_display = feature_display.astype({"Feature": "object", "Value": "object"})
+            st.table(feature_display.set_index("Feature"))
 
-# Force standard Python string dtype — prevents Arrow LargeUtf8 serialization error
-feature_display["Feature"] = feature_display["Feature"].astype(str)
-feature_display["Value"] = feature_display["Value"].astype(str)
-feature_display = feature_display.astype({"Feature": "object", "Value": "object"})
-
-st.table(feature_display.set_index("Feature"))
-    st.markdown("---")
-    st.markdown("### 🧪 Quick Test URLs")
-    st.markdown("Copy any of these into the scanner above:")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("**Likely Phishing:**")
-        st.code("http://paypal-login-security.xyz/update/account")
-        st.code("http://192.168.1.1/bank/login.php?id=293847")
-        st.code("http://secure-verify-amazon.tk/confirm")
-    with col2:
-        st.markdown("**Likely Safe:**")
-        st.code("https://www.google.com")
-        st.code("https://www.github.com")
-        st.code("https://www.wikipedia.org")
-
+        st.markdown("---")
+        st.markdown("### 🧪 Quick Test URLs")
+        st.markdown("Copy any of these into the scanner above:")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Likely Phishing:**")
+            st.code("http://paypal-login-security.xyz/update/account")
+            st.code("http://192.168.1.1/bank/login.php?id=293847")
+            st.code("http://secure-verify-amazon.tk/confirm")
+        with col2:
+            st.markdown("**Likely Safe:**")
+            st.code("https://www.google.com")
+            st.code("https://www.github.com")
+            st.code("https://www.wikipedia.org")
 # ════════════════════════════════════════════════════════════
 # PAGE 3 — MODEL PERFORMANCE
 # ════════════════════════════════════════════════════════════
