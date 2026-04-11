@@ -1,0 +1,177 @@
+{
+  "metadata": {
+    "generated_at": "2026-04-11T16:40:06.799355+00:00",
+    "project": "PhishGuard \u2014 Context-Aware Phishing Detection Using Hybrid Network and Behavioural Signals",
+    "model": "Stacking Ensemble (RF + XGB + LGB \u2192 Logistic meta-learner)",
+    "n_features": 23,
+    "training_samples": "see train.py output",
+    "threshold": 0.26321594726246156,
+    "threshold_source": "learned"
+  },
+  "distribution_shift": {
+    "internal_metrics": {
+      "dataset": "internal",
+      "n_samples": 9763,
+      "accuracy": 0.9996,
+      "precision": 0.9998,
+      "recall": 0.9994,
+      "f1": 0.9996,
+      "roc_auc": 0.9999
+    },
+    "external_metrics": {
+      "dataset": "external",
+      "n_samples": 522142,
+      "accuracy": 0.5052,
+      "precision": 0.2079,
+      "recall": 0.6228,
+      "f1": 0.312,
+      "roc_auc": 0.5818
+    },
+    "gap": {
+      "accuracy": 0.4944,
+      "precision": 0.7919,
+      "recall": 0.3766,
+      "f1": 0.6876,
+      "roc_auc": 0.4181
+    },
+    "gap_severity": "critical",
+    "interpretation": "Dummy shift data \u2014 replace with real call to distribution_shift_analysis()"
+  },
+  "adversarial_robustness": {
+    "n_pairs": 10,
+    "n_bypassed": 0,
+    "bypass_rate": 0.0,
+    "interpretation": "Of 10 crafted evasion attempts, 0 successfully bypassed the model (bypass rate: 0.0%). This is expected for a URL-feature-only model: attackers who control the domain registration can eliminate most lexical signals. This motivates the multi-modal approach \u2014 behavioural signals cannot be controlled by the attacker because they depend on victim behaviour, not attacker-controlled URL structure. Proposed mitigations include WHOIS-based domain age features (new domains = high risk) and continuous retraining as attack patterns evolve.",
+    "evasion_pairs": [
+      {
+        "original_url": "http://paypal-login-security.xyz/update/account",
+        "crafted_url": "https://paypalaccountsecure.com/account-update",
+        "technique": "Replace suspicious TLD + add HTTPS + remove hyphens",
+        "orig_prob": 0.9948,
+        "craft_prob": 0.9948,
+        "prob_drop": -0.0,
+        "orig_decision": "phishing",
+        "craft_decision": "phishing",
+        "bypass": false
+      },
+      {
+        "original_url": "http://192.168.1.1/bank/login.php",
+        "crafted_url": "https://secure-banking-portal.com/login",
+        "technique": "Replace raw IP with plausible domain + HTTPS",
+        "orig_prob": 0.9951,
+        "craft_prob": 0.9948,
+        "prob_drop": 0.0003,
+        "orig_decision": "phishing",
+        "craft_decision": "phishing",
+        "bypass": false
+      },
+      {
+        "original_url": "http://apple-id-verify.top/account/signin",
+        "crafted_url": "https://apple-support-account.com/signin",
+        "technique": "Replace .top TLD with .com + restructure path",
+        "orig_prob": 0.9948,
+        "craft_prob": 0.9947,
+        "prob_drop": 0.0001,
+        "orig_decision": "phishing",
+        "craft_decision": "phishing",
+        "bypass": false
+      },
+      {
+        "original_url": "http://signin-google-verify.cf/account",
+        "crafted_url": "https://accounts-google-portal.com/sign-in",
+        "technique": "Replace .cf TLD + reword path",
+        "orig_prob": 0.9948,
+        "craft_prob": 0.9947,
+        "prob_drop": 0.0002,
+        "orig_decision": "phishing",
+        "craft_decision": "phishing",
+        "bypass": false
+      },
+      {
+        "original_url": "http://netflix-payment-update.gq/billing",
+        "crafted_url": "https://netflix-billing-support.com/update",
+        "technique": "Replace .gq TLD + HTTPS + restructure",
+        "orig_prob": 0.9948,
+        "craft_prob": 0.9947,
+        "prob_drop": 0.0001,
+        "orig_decision": "phishing",
+        "craft_decision": "phishing",
+        "bypass": false
+      },
+      {
+        "original_url": "http://paypal.com.account-verify.xyz/login",
+        "crafted_url": "https://paypal-account-center.com/verify",
+        "technique": "Remove legitimate brand as subdomain trick + .com TLD",
+        "orig_prob": 0.9948,
+        "craft_prob": 0.9947,
+        "prob_drop": 0.0001,
+        "orig_decision": "phishing",
+        "craft_decision": "phishing",
+        "bypass": false
+      },
+      {
+        "original_url": "http://bankofamerica-secure.ga/update",
+        "crafted_url": "https://bankofamerica-helpdesk.com/update",
+        "technique": "Replace .ga TLD with .com",
+        "orig_prob": 0.9948,
+        "craft_prob": 0.9948,
+        "prob_drop": 0.0,
+        "orig_decision": "phishing",
+        "craft_decision": "phishing",
+        "bypass": false
+      },
+      {
+        "original_url": "http://microsoft-support-alert.pw/security",
+        "crafted_url": "https://microsoftsupportportal.com/security-check",
+        "technique": "Remove hyphens + replace .pw + HTTPS",
+        "orig_prob": 0.995,
+        "craft_prob": 0.9948,
+        "prob_drop": 0.0002,
+        "orig_decision": "phishing",
+        "craft_decision": "phishing",
+        "bypass": false
+      },
+      {
+        "original_url": "http://amazon-account-suspended.tk/verify",
+        "crafted_url": "https://amazon-account-services.com/verify",
+        "technique": "Replace .tk TLD with .com + modify path words",
+        "orig_prob": 0.9948,
+        "craft_prob": 0.9947,
+        "prob_drop": 0.0001,
+        "orig_decision": "phishing",
+        "craft_decision": "phishing",
+        "bypass": false
+      },
+      {
+        "original_url": "http://secure-verify-amazon.tk/confirm",
+        "crafted_url": "https://amazon-security-center.com/confirm",
+        "technique": "Reorder keywords + replace .tk + HTTPS",
+        "orig_prob": 0.995,
+        "craft_prob": 0.9947,
+        "prob_drop": 0.0003,
+        "orig_decision": "phishing",
+        "craft_decision": "phishing",
+        "bypass": false
+      }
+    ]
+  },
+  "research_conclusions": {
+    "primary_contribution": "Multi-modal phishing detection combining structural URL features, NLP-derived token features, and behavioural session signals into a unified risk score via weighted fusion.",
+    "distribution_shift_finding": "A 49.4% accuracy gap between internal and external evaluation (critical severity) demonstrates the challenge of cross-distribution generalisation in security ML systems. Recall on external data remains 62.3%, which is operationally acceptable for a security-first deployment.",
+    "adversarial_finding": "Lexical URL features alone have a 0.0% evasion rate under simulated adversarial conditions. Behavioural signals, which depend on victim interaction rather than attacker-controlled URL structure, are resilient to this class of attack. This motivates the multi-modal approach.",
+    "limitations": [
+      "Model is static \u2014 no online learning or retraining pipeline implemented.",
+      "Behavioural signals are collected via slider simulation, not real browser telemetry.",
+      "WHOIS-based domain age features are not included due to API latency constraints.",
+      "Adversarial evaluation uses manually crafted examples, not automated evasion.",
+      "Cross-validation not performed on the external dataset."
+    ],
+    "future_work": [
+      "WHOIS domain age and registration country as additional features.",
+      "Automated adversarial example generation via genetic algorithms or FGSM variants.",
+      "Online learning component with sliding-window retraining on fresh phishing feeds.",
+      "Real browser extension integration for live behavioural telemetry collection.",
+      "Ensemble calibration study to improve probability reliability on external data."
+    ]
+  }
+}

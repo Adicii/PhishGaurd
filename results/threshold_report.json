@@ -1,0 +1,11 @@
+{
+  "base_threshold": 0.26321594726246156,
+  "uncertainty_band": 0.08,
+  "high_risk_shift": 0.05,
+  "lower_bound": 0.18321594726246154,
+  "upper_bound": 0.3432159472624616,
+  "f1_at_threshold": 0.9835519934657205,
+  "f1_at_0_75": 0.9779548363125955,
+  "improvement": 0.005597157153125032,
+  "val_set_size": 139986
+}
