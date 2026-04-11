@@ -112,12 +112,10 @@ def run_threshold_computation():
     print(f"    Using: {data_file}")
 
     df = pd.read_csv(data_file)
-    # ---------------- FIX LABELS ----------------
+    
     df = df.dropna(subset=["label"])
-
     df["label"] = df["label"].apply(lambda x: 0 if x == 0 else 1)
     df["label"] = df["label"].astype(int)
-    # -------------------------------------------
 
     # Auto-detect label column
     label_col = next(

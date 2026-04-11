@@ -22,8 +22,8 @@ from lightgbm import LGBMClassifier
 # ─────────────────────────────────────────────
 # CONFIG — update DATA_FILE to match your CSV
 # ─────────────────────────────────────────────
-DATA_FILE   = "data/processed_urls.csv"   # <-- change this if needed
-LABEL_COL   = "label"                     # column name: 1=phishing, 0=benign
+DATA_FILE   = "data/processed_urls.csv"
+LABEL_COL   = "label"
 MODELS_DIR  = "models"
 RESULTS_DIR = "results"
 RANDOM_STATE = 42
@@ -38,19 +38,12 @@ os.makedirs(RESULTS_DIR, exist_ok=True)
 # ─────────────────────────────────────────────
 print("\n[1/7] Loading data...")
 df = pd.read_csv(DATA_FILE)
-# ---------------- FIX LABELS ----------------
+
 df = df.dropna(subset=[LABEL_COL])
-
-# Convert to binary:
-# 0 → 0 (benign)
-# everything else → 1 (phishing)
-
 df[LABEL_COL] = df[LABEL_COL].apply(lambda x: 0 if x == 0 else 1)
 df[LABEL_COL] = df[LABEL_COL].astype(int)
-# -------------------------------------------
 
 df = df.dropna(subset=[LABEL_COL])
-df[LABEL_COL] = df[LABEL_COL].astype(int)
 
 # Auto-detect label column if not found
 if LABEL_COL not in df.columns:

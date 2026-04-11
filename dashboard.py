@@ -144,7 +144,6 @@ if page == "URL Scanner":
         if url_input.strip() == "":
             st.warning("Please enter a URL.")
         else:
-            # AFTER — paste this in, replacing the block above exactly
             with st.spinner("Extracting features and analyzing..."):
                 result        = pipeline.predict(url_input)
 
@@ -167,7 +166,6 @@ if page == "URL Scanner":
             col1, col2 = st.columns([1.2, 1])
 
             with col1:
-                # AFTER
                 if decision == "phishing":
                     st.error(
                         f"### PHISHING DETECTED\n"
@@ -190,7 +188,6 @@ if page == "URL Scanner":
                         "No strong phishing indicators detected in this URL."
                     )
 
-                # 🔥 NEW BLOCK (Step 7 — Combined Scores)
                 st.markdown("---")
 
                 col_u, col_b, col_f = st.columns(3)
