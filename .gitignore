@@ -1,1 +1,8 @@
 data/
+__pycache__/
+.ipynb_checkpoints/
+*.pkl
+.env
+venv/
+models/
+results/
