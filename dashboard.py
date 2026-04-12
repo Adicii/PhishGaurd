@@ -119,8 +119,9 @@ page = st.sidebar.radio("Navigate", [
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("**System Info**")
-st.sidebar.markdown("Model: Gradient Boosting")
-st.sidebar.markdown("Features: 21 URL signals")
+st.sidebar.markdown("Model: Stacking Ensemble (RF + XGB + GB + LR → GB meta)")
+st.sidebar.markdown("Features: 21 URL + 7 Behavioral signals")
+st.sidebar.markdown("Fusion: 65% URL · 35% Behavioral")
 st.sidebar.markdown("ROC-AUC: 0.9999")
 st.sidebar.markdown(f"Decision Threshold: {threshold_data['base_threshold']:.4f}")
 
@@ -140,20 +141,48 @@ if page == "URL Scanner":
 
     url_input = st.text_input("Enter URL:", placeholder="e.g. http://paypal-login-security.xyz/update")
 
+    with st.expander("⚙️ Optional: Add Behavioral Signals (Hybrid Mode)", expanded=False):
+        st.caption("If you observed the user's session behaviour, add it here to get a fused URL + behavioral risk score.")
+        beh_col1, beh_col2, beh_col3 = st.columns(3)
+        with beh_col1:
+            beh_session_duration = st.slider("Session Duration (sec)", 5, 300, 45, key="url_beh_dur")
+            beh_time_to_submit   = st.slider("Time to Submit (sec)", 1, 120, 30, key="url_beh_submit")
+        with beh_col2:
+            beh_num_pages    = st.slider("Pages Visited", 1, 15, 5, key="url_beh_pages")
+            beh_back_button  = st.slider("Back Button Usage", 0, 10, 0, key="url_beh_back")
+        with beh_col3:
+            beh_scroll_depth   = st.slider("Scroll Depth (%)", 0, 100, 50, key="url_beh_scroll")
+            beh_mouse_variance = st.slider("Mouse Variance", 0, 100, 50, key="url_beh_mouse")
+            beh_tab_switches   = st.slider("Tab Switches", 0, 10, 0, key="url_beh_tabs")
+        use_behavioral = st.checkbox("Include behavioral signals in score", value=False, key="url_use_beh")
+
     if st.button("Scan URL", type="primary"):
         if url_input.strip() == "":
             st.warning("Please enter a URL.")
         else:
             with st.spinner("Extracting features and analyzing..."):
-                result        = pipeline.predict(url_input)
+                behavior_data = None
+                if use_behavioral:
+                    behavior_data = {
+                        "session_duration": beh_session_duration,
+                        "time_to_submit":   beh_time_to_submit,
+                        "num_pages":        beh_num_pages,
+                        "scroll_depth":     beh_scroll_depth,
+                        "mouse_variance":   beh_mouse_variance,
+                        "back_button":      beh_back_button,
+                        "tab_switches":     beh_tab_switches,
+                    }
+                result        = pipeline.predict(url_input, behavior_data=behavior_data)
 
                 prob          = result["final_score"]
                 url_score     = result["url_score"]
                 decision      = result["decision"]
                 risk_pct      = round(prob * 100, 2)
 
-                raw_features  = result["url_features"]
+                raw_features    = result["url_features"]
                 adaptive_thresh = result["threshold_used"]
+                beh_score       = result["behavior_score"]
+                fusion_weights  = result["fusion_weights"]
 
                 threshold_result = {
                     "lower_bound":         result["lower_bound"],
@@ -198,17 +227,27 @@ if page == "URL Scanner":
                     help="Raw stacking ensemble score on URL features alone"
                 )
 
+                beh_display = f"{round(beh_score * 100, 1)}%" if use_behavioral else "N/A (URL-only mode)"
                 col_b.metric(
                     "Behavioral Score",
-                    "N/A (URL scan only)",
-                    help="Run the Behavioral Risk Analyzer and combine manually in Phase 6"
+                    beh_display,
+                    help="Behavioral risk from session signals (0 when not provided)"
                 )
 
                 col_f.metric(
                     "Final Fused Score",
                     f"{risk_pct}%",
-                    help="65% URL + 35% behavioral (behavioral=0 in URL-only mode)"
+                    help=f"URL×{fusion_weights['url']} + Behavioral×{fusion_weights['behavior']}"
                 )
+
+                if use_behavioral:
+                    st.markdown("**Hybrid Fusion Breakdown**")
+                    fusion_df = fix_df(pd.DataFrame([
+                        ("URL Score",        f"{round(url_score*100,1)}%",  f"× {fusion_weights['url']}"),
+                        ("Behavioral Score", f"{round(beh_score*100,1)}%",  f"× {fusion_weights['behavior']}"),
+                        ("Fused Score",      f"{risk_pct}%",               "final"),
+                    ], columns=["Component", "Score", "Weight"]))
+                    st.table(fusion_df.set_index("Component"))
 
                 # Show threshold info in a small expander
                 with st.expander("Threshold Details"):
@@ -607,6 +646,12 @@ elif page == "Behavioral Risk Analyzer":
     )
     st.markdown("---")
 
+    beh_url_input = st.text_input(
+        "URL to analyze (optional):",
+        placeholder="e.g. http://paypal-login-security.xyz — leave blank for behavioral-only mode",
+        key="beh_url"
+    )
+
     st.markdown("### Configure Session Parameters")
     st.caption("Adjust the sliders to simulate a browsing session and observe how the behavioral analyzer scores it.")
 
@@ -665,6 +710,25 @@ elif page == "Behavioral Risk Analyzer":
             back_button      = back_button,
             tab_switches     = tab_switches,
         )
+
+        # ── Hybrid fusion: run URL score if URL was provided ──
+        hybrid_result = None
+        if beh_url_input.strip():
+            try:
+                hybrid_result = pipeline.predict(
+                    beh_url_input.strip(),
+                    behavior_data={
+                        "session_duration": session_duration,
+                        "time_to_submit":   time_to_submit,
+                        "num_pages":        num_pages,
+                        "scroll_depth":     scroll_depth,
+                        "mouse_variance":   mouse_variance,
+                        "back_button":      back_button,
+                        "tab_switches":     tab_switches,
+                    }
+                )
+            except Exception as e:
+                st.warning(f"Could not score URL: {e}")
 
         phishing_score  = round(beh["behavior_score"] * 100)
         nav_entropy     = beh["nav_entropy"]
@@ -748,6 +812,22 @@ elif page == "Behavioral Risk Analyzer":
                 "Long session with no tab switching is unusual for genuine browsing behavior."))
 
         phishing_score = min(phishing_score, 100)
+
+        # ── Hybrid fusion table (shown only when URL was given) ──
+        if hybrid_result:
+            st.markdown("---")
+            st.markdown("### Hybrid Fusion Result")
+            fw = hybrid_result["fusion_weights"]
+            fusion_table = fix_df(pd.DataFrame([
+                ("URL Score",        f"{round(hybrid_result['url_score']*100,1)}%",    f"× {fw['url']}"),
+                ("Behavioral Score", f"{round(hybrid_result['behavior_score']*100,1)}%", f"× {fw['behavior']}"),
+                ("Fused Score",      f"{round(hybrid_result['final_score']*100,1)}%",   "final"),
+                ("Decision",         hybrid_result["decision"].upper(),                 "—"),
+            ], columns=["Component", "Score", "Weight"]))
+            st.table(fusion_table.set_index("Component"))
+            fig_h = draw_gauge(hybrid_result["final_score"], hybrid_result["threshold_used"], "Hybrid risk score")
+            st.pyplot(fig_h)
+            plt.close(fig_h)
 
         st.markdown("---")
         st.markdown("### Session Analysis Results")
