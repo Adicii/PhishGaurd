@@ -119,10 +119,11 @@ page = st.sidebar.radio("Navigate", [
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("**System Info**")
-st.sidebar.markdown("Model: Stacking Ensemble (RF + XGB + GB + LR → GB meta)")
-st.sidebar.markdown("Features: 21 URL + 7 Behavioral signals")
-st.sidebar.markdown("Fusion: 65% URL · 35% Behavioral")
-st.sidebar.markdown("ROC-AUC: 0.9999")
+st.sidebar.markdown("Model: Stacking Ensemble")
+st.sidebar.markdown("Base: XGBoost · LightGBM · Random Forest")
+st.sidebar.markdown("Meta: Logistic Regression")
+st.sidebar.markdown("Features: 21 URL signals")
+st.sidebar.markdown("F1: 0.9806 | ROC-AUC: 0.9967")
 st.sidebar.markdown(f"Decision Threshold: {threshold_data['base_threshold']:.4f}")
 
 
@@ -135,44 +136,47 @@ if page == "URL Scanner":
     st.markdown(
         "Enter any URL to receive a phishing risk assessment. "
         "The system extracts 21 structural and statistical features from the URL "
-        "and scores it using a trained Gradient Boosting classifier."
+        "and scores it using a stacking ensemble (XGBoost + LightGBM + Random Forest "
+        "with Logistic Regression meta-learner). Optionally include behavioral session "
+        "data to activate hybrid fusion scoring (65% URL + 35% behavioral)."
     )
     st.markdown("---")
 
     url_input = st.text_input("Enter URL:", placeholder="e.g. http://paypal-login-security.xyz/update")
 
-    with st.expander("⚙️ Optional: Add Behavioral Signals (Hybrid Mode)", expanded=False):
-        st.caption("If you observed the user's session behaviour, add it here to get a fused URL + behavioral risk score.")
-        beh_col1, beh_col2, beh_col3 = st.columns(3)
-        with beh_col1:
-            beh_session_duration = st.slider("Session Duration (sec)", 5, 300, 45, key="url_beh_dur")
-            beh_time_to_submit   = st.slider("Time to Submit (sec)", 1, 120, 30, key="url_beh_submit")
-        with beh_col2:
-            beh_num_pages    = st.slider("Pages Visited", 1, 15, 5, key="url_beh_pages")
-            beh_back_button  = st.slider("Back Button Usage", 0, 10, 0, key="url_beh_back")
-        with beh_col3:
-            beh_scroll_depth   = st.slider("Scroll Depth (%)", 0, 100, 50, key="url_beh_scroll")
-            beh_mouse_variance = st.slider("Mouse Variance", 0, 100, 50, key="url_beh_mouse")
-            beh_tab_switches   = st.slider("Tab Switches", 0, 10, 0, key="url_beh_tabs")
-        use_behavioral = st.checkbox("Include behavioral signals in score", value=False, key="url_use_beh")
+    with st.expander("Include Behavioral Context (optional — enables hybrid fusion)"):
+        st.caption(
+            "If you observed how a user behaved on this URL, enter those signals here. "
+            "The system will fuse URL structure (65%) with behavioral risk (35%) for a combined score."
+        )
+        bc1, bc2, bc3 = st.columns(3)
+        with bc1:
+            b_session_dur = st.slider("Session Duration (s)",     5, 300, 45, key="sc_sd")
+            b_time_submit = st.slider("Time to Submit Creds (s)", 1, 120,  8, key="sc_ts")
+        with bc2:
+            b_num_pages   = st.slider("Pages Visited",            1,  15,  2, key="sc_np")
+            b_scroll      = st.slider("Scroll Depth (%)",         0, 100, 25, key="sc_sc")
+            b_back        = st.slider("Back Button Presses",      0,  10,  0, key="sc_bb")
+        with bc3:
+            b_mouse       = st.slider("Mouse Movement Variance",  0, 100, 15, key="sc_mv")
+            b_tabs        = st.slider("Tab Switches",             0,  10,  0, key="sc_tb")
+        use_behavior = st.checkbox("Include this behavioral data in the analysis", value=False)
 
     if st.button("Scan URL", type="primary"):
         if url_input.strip() == "":
             st.warning("Please enter a URL.")
         else:
             with st.spinner("Extracting features and analyzing..."):
-                behavior_data = None
-                if use_behavioral:
-                    behavior_data = {
-                        "session_duration": beh_session_duration,
-                        "time_to_submit":   beh_time_to_submit,
-                        "num_pages":        beh_num_pages,
-                        "scroll_depth":     beh_scroll_depth,
-                        "mouse_variance":   beh_mouse_variance,
-                        "back_button":      beh_back_button,
-                        "tab_switches":     beh_tab_switches,
-                    }
-                result        = pipeline.predict(url_input, behavior_data=behavior_data)
+                behavior_data = {
+                    "session_duration": b_session_dur,
+                    "time_to_submit":   b_time_submit,
+                    "num_pages":        b_num_pages,
+                    "scroll_depth":     b_scroll,
+                    "mouse_variance":   b_mouse,
+                    "back_button":      b_back,
+                    "tab_switches":     b_tabs,
+                } if use_behavior else None
+                result = pipeline.predict(url_input, behavior_data=behavior_data)
 
                 prob          = result["final_score"]
                 url_score     = result["url_score"]
@@ -227,20 +231,26 @@ if page == "URL Scanner":
                     help="Raw stacking ensemble score on URL features alone"
                 )
 
-                beh_display = f"{round(beh_score * 100, 1)}%" if use_behavioral else "N/A (URL-only mode)"
+                beh_score_display = (
+                    f"{round(beh_score * 100, 1)}%"
+                    if use_behavior else "Not provided"
+                )
                 col_b.metric(
                     "Behavioral Score",
-                    beh_display,
-                    help="Behavioral risk from session signals (0 when not provided)"
+                    beh_score_display,
+                    help="Behavioral risk component (35% weight when provided)"
                 )
-
+                fusion_label = (
+                    "65% URL + 35% Behavioral"
+                    if use_behavior else "URL-only mode (100% URL weight)"
+                )
                 col_f.metric(
                     "Final Fused Score",
                     f"{risk_pct}%",
-                    help=f"URL×{fusion_weights['url']} + Behavioral×{fusion_weights['behavior']}"
+                    help=fusion_label
                 )
 
-                if use_behavioral:
+                if use_behavior:
                     st.markdown("**Hybrid Fusion Breakdown**")
                     fusion_df = fix_df(pd.DataFrame([
                         ("URL Score",        f"{round(url_score*100,1)}%",  f"× {fusion_weights['url']}"),
@@ -408,9 +418,12 @@ if page == "URL Scanner":
 elif page == "Model Performance":
     st.title("Model Performance Comparison")
     st.markdown(
-        "Four machine learning models were trained and evaluated. "
-        "Each model was tested both **internally** (same dataset distribution) "
-        "and **externally** (completely different dataset) to assess real-world generalization."
+        "PhishGuard uses a **stacking ensemble** combining XGBoost, LightGBM, and Random Forest "
+        "as base learners with Logistic Regression as the meta-learner. "
+        "The table below shows individual base model performance evaluated independently "
+        "during cross-validation, before stacking. Each was tested both **internally** "
+        "(same dataset distribution) and **externally** (completely different dataset) "
+        "to assess real-world generalization."
     )
     st.markdown("---")
 
@@ -641,16 +654,172 @@ elif page == "Behavioral Risk Analyzer":
         "This module analyzes **how a user behaves** during a browsing session, "
         "not just the URL itself. Phishing sessions have distinct behavioral fingerprints: "
         "users are manipulated into submitting credentials quickly with minimal exploration. "
-        "Legitimate sessions show broader navigation, longer dwell time, and higher entropy. "
-        "This is the **behavioral signal layer** that complements URL-based detection."
+        "When a URL is provided, the system runs full hybrid fusion: "
+        "URL structure (65%) combined with behavioral signals (35%)."
     )
     st.markdown("---")
 
-    beh_url_input = st.text_input(
+    bra_url = st.text_input(
         "URL to analyze (optional):",
-        placeholder="e.g. http://paypal-login-security.xyz — leave blank for behavioral-only mode",
-        key="beh_url"
+        placeholder="e.g. http://paypal-login-security.xyz/update",
+        help="If provided, runs full hybrid fusion. If blank, behavioral analysis only."
     )
+
+    st.markdown("### Configure Session Parameters")
+    st.caption("Adjust sliders to simulate a browsing session.")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("**Timing Signals**")
+        session_duration = st.slider("Session Duration (seconds)", 5, 300, 45,
+            help="Total time spent on the website.")
+        time_to_submit = st.slider("Time to Credential Submission (seconds)", 1, 120, 8,
+            help="How quickly credentials were submitted.")
+    with col2:
+        st.markdown("**Interaction Signals**")
+        num_clicks   = st.slider("Number of Clicks Before Submit", 1, 20, 2)
+        back_button  = st.slider("Back Button Usage", 0, 10, 0)
+        num_pages    = st.slider("Pages Visited", 1, 15, 2)
+    with col3:
+        st.markdown("**Engagement Signals**")
+        scroll_depth   = st.slider("Scroll Depth (%)", 0, 100, 25)
+        mouse_variance = st.slider("Mouse Movement Variance", 0, 100, 15)
+        tab_switches   = st.slider("Tab Switches", 0, 10, 0)
+
+    if st.button("Analyze Session", type="primary"):
+
+        behavior_data = {
+            "session_duration": session_duration,
+            "time_to_submit":   time_to_submit,
+            "num_pages":        num_pages,
+            "scroll_depth":     scroll_depth,
+            "mouse_variance":   mouse_variance,
+            "back_button":      back_button,
+            "tab_switches":     tab_switches,
+        }
+
+        with st.spinner("Running analysis..."):
+            if bra_url.strip():
+                result         = pipeline.predict(bra_url.strip(), behavior_data=behavior_data)
+                url_score_val  = result["url_score"]
+                behavior_score = result["behavior_score"]
+                final_score    = result["final_score"]
+                decision       = result["decision"]
+                beh            = result["behavior_result"]
+                mode           = "hybrid"
+            else:
+                from src.behavior_model import compute_behavior_score
+                beh            = compute_behavior_score(**behavior_data)
+                behavior_score = beh["behavior_score"]
+                url_score_val  = None
+                final_score    = behavior_score
+                decision       = (
+                    "phishing"  if behavior_score >= 0.6 else
+                    "uncertain" if behavior_score >= 0.3 else
+                    "safe"
+                )
+                mode = "behavioral_only"
+
+        st.markdown("---")
+        st.markdown("### Results")
+
+        if mode == "hybrid":
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("URL Score",        f"{round(url_score_val*100,1)}%",
+                      help="Stacking ensemble on 21 URL features")
+            c2.metric("Behavioral Score", f"{round(behavior_score*100,1)}%",
+                      help="Behavioral risk component")
+            c3.metric("Fused Score",      f"{round(final_score*100,1)}%",
+                      help="65% URL + 35% behavioral")
+            c4.metric("Decision",         decision.upper())
+
+            st.markdown("#### Fusion Breakdown")
+            fusion_df = pd.DataFrame([{
+                "Component":    "URL Structure",
+                "Raw Score":    f"{round(url_score_val*100,1)}%",
+                "Weight":       "65%",
+                "Contribution": f"{round(url_score_val*0.65*100,1)}%",
+            }, {
+                "Component":    "Behavioral Risk",
+                "Raw Score":    f"{round(behavior_score*100,1)}%",
+                "Weight":       "35%",
+                "Contribution": f"{round(behavior_score*0.35*100,1)}%",
+            }, {
+                "Component":    "FINAL FUSED SCORE",
+                "Raw Score":    "",
+                "Weight":       "",
+                "Contribution": f"{round(final_score*100,1)}%",
+            }])
+            st.table(fix_df(fusion_df).set_index("Component"))
+
+            fig = draw_gauge(final_score, threshold_data['base_threshold'], "Fused risk score")
+            st.pyplot(fig)
+            plt.close(fig)
+        else:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Behavioral Score", f"{round(behavior_score*100,1)}%")
+            c2.metric("Decision",         decision.upper())
+            c3.metric("Mode",             "Behavioral Only")
+
+        st.markdown("---")
+
+        nav_entropy  = beh.get("nav_entropy",  0.0)
+        submit_ratio = beh.get("submit_ratio", 0.0)
+        flags        = beh.get("flags",        [])
+        safe_signals = beh.get("safe_signals", [])
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if decision == "phishing":
+                st.error(f"### HIGH PHISHING RISK\nBehavioral Score: {round(behavior_score*100)}%")
+            elif decision == "uncertain":
+                st.warning(f"### MODERATE RISK\nBehavioral Score: {round(behavior_score*100)}%")
+            else:
+                st.success(f"### LOW RISK\nBehavioral Score: {round(behavior_score*100)}%")
+
+            if flags:
+                st.markdown("#### Suspicious Signals")
+                for severity, title, explanation in flags:
+                    with st.expander(f"[{severity}] {title}"):
+                        st.markdown(explanation)
+
+            if safe_signals:
+                st.markdown("#### Normal Signals")
+                for s in safe_signals:
+                    st.markdown(f"- {s}")
+
+        with col2:
+            fig, axes = plt.subplots(2, 2, figsize=(8, 6))
+            categories = ["Your\nSession", "Typical\nPhishing", "Typical\nLegitimate"]
+            colors_bar = ["#3498db", "#e74c3c", "#2ecc71"]
+            axes[0,0].bar(categories, [time_to_submit, 5, 48],  color=colors_bar, alpha=0.85)
+            axes[0,0].set_title("Time to Submit (s)", fontweight="bold", fontsize=9)
+            axes[0,1].bar(categories, [num_pages, 1, 7],        color=colors_bar, alpha=0.85)
+            axes[0,1].set_title("Pages Visited", fontweight="bold", fontsize=9)
+            axes[1,0].bar(categories, [scroll_depth, 18, 62],   color=colors_bar, alpha=0.85)
+            axes[1,0].set_title("Scroll Depth (%)", fontweight="bold", fontsize=9)
+            axes[1,1].bar(categories, [nav_entropy, 0.1, 1.8],  color=colors_bar, alpha=0.85)
+            axes[1,1].set_title("Navigation Entropy", fontweight="bold", fontsize=9)
+            plt.suptitle("Your Session vs Known Patterns", fontweight="bold", fontsize=10)
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close(fig)
+
+        st.markdown("---")
+        st.info(
+            "**The Behavioral Detection Principle:**\n\n"
+            "Phishing pages are designed to steal credentials as quickly as possible. "
+            "This creates measurable behavioral anomalies:\n\n"
+            "- Victims submit credentials **3-8x faster** than on legitimate sites\n"
+            "- Phishing sessions involve **1-2 pages** vs 5-8 for legitimate sessions\n"
+            "- Navigation entropy is **near zero** — users don't explore\n"
+            "- Scroll depth is typically **under 30%** — content is irrelevant\n\n"
+            "These signals complement URL-based detection because they depend on how "
+            "real users react to deception — not on website structure itself. "
+            "Current fusion is late fusion (score-level): behavioral risk is combined "
+            "as a weighted score, not as an input feature to the stacking ensemble."
+        )
 
     st.markdown("### Configure Session Parameters")
     st.caption("Adjust the sliders to simulate a browsing session and observe how the behavioral analyzer scores it.")
